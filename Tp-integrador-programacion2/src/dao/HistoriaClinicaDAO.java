@@ -1,54 +1,53 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package dao;
 
-import config.DatabaseConnection;
 import entities.GrupoSanguineo;
 import entities.HistoriaClinica;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- *
- * @author PC
- */
 public class HistoriaClinicaDAO implements GenericDAO<HistoriaClinica> {
 
-    @Override
-    public void insertar(HistoriaClinica historia) {
-        //consulta sql
-        String sql = "INSERT INTO historiaClinica (id, nroHistoria, grupoSanguineo, antecedentes, medicacionActual, observaciones) VALUES (?, ?, ?, ?, ?, ?)";
 
-        //Conexion y consulta, con resources para cerrar la transaccion automaticamente
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+    private static final String SQL_INSERT = "INSERT INTO historiaclinica (id, nroHistoria, grupoSanguineo, antecedentes, medicacionActual, observaciones) VALUES (?, ?, ?, ?, ?, ?)";
+    private static final String SQL_UPDATE = "UPDATE historiaclinica SET nroHistoria = ?, grupoSanguineo = ?, antecedentes = ?, medicacionActual = ?, observaciones = ? WHERE id = ?";
+    private static final String SQL_DELETE = "DELETE FROM historiaclinica WHERE id = ?"; // Eliminación física 
+    private static final String SQL_SELECT_ID = "SELECT * FROM historiaclinica WHERE id = ?";
+    private static final String SQL_SELECT_ALL = "SELECT * FROM historiaclinica";
+    private static final String SQL_SELECT_BY_NRO = "SELECT * FROM historiaclinica WHERE nroHistoria = ?";
+
+
+    @Override
+    public void insertar(HistoriaClinica historia, Connection conn) throws SQLException {
+
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_INSERT, PreparedStatement.RETURN_GENERATED_KEYS)) {
             stmt.setInt(1, historia.getId());
-            stmt.setInt(2, historia.getNroHistoria());
+            stmt.setInt(2, historia.getNroHistoria()); 
             stmt.setString(3, historia.getGrupoSanguineo().getValor());
             stmt.setString(4, historia.getAntecedentes());
             stmt.setString(5, historia.getMedicacionActual());
             stmt.setString(6, historia.getObservaciones());
 
-            int filasAfectadas = stmt.executeUpdate();
-
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se pudo agregar la historia clinica.");
-            } else {
-                System.out.println("Historia clinica agregada ID: " + historia.getId());
+            if (stmt.executeUpdate() == 0) {
+                throw new SQLException("Error al insertar Historia Clinica. Ninguna fila afectada.");
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al agregar la historia clinica: " + e.getMessage());
+            
+            // Recuperar ID generado
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    historia.setId(rs.getInt(1)); 
+                }
+            }
         }
+
     }
 
     @Override
-    public void actualizar(HistoriaClinica historia) {
-        String sql = "UPDATE historiaclinica SET nroHistoria = ?, grupoSanguineo = ?, antecedentes = ?, medicacionActual = ?, observaciones = ?  WHERE id = ?";
-
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+    public void actualizar(HistoriaClinica historia, Connection conn) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_UPDATE)) {
             stmt.setInt(1, historia.getNroHistoria());
             stmt.setString(2, historia.getGrupoSanguineo().getValor());
             stmt.setString(3, historia.getAntecedentes());
@@ -56,97 +55,64 @@ public class HistoriaClinicaDAO implements GenericDAO<HistoriaClinica> {
             stmt.setString(5, historia.getObservaciones());
             stmt.setInt(6, historia.getId());
 
-            int filasAfectadas = stmt.executeUpdate();
-
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se encontro la historia clinica.");
-            } else {
-                System.out.println("Historia clinica actualizada ID: " + historia.getId());
+            if (stmt.executeUpdate() == 0) {
+                 throw new SQLException("Error al actualizar Historia Clinica. ID no encontrado.");
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al actualizar la historia clinica: " + e.getMessage());
         }
     }
 
+    //Eliminación física
     @Override
-    public void eliminar(int id) {
-        String sql = "DELETE FROM historiaclinica WHERE id = ?";
-
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+    public void eliminar(int id, Connection conn) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_DELETE)) {
             stmt.setInt(1, id);
 
-            int filasAfectadas = stmt.executeUpdate();
-
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se encontro la historia clinica.");
-            } else {
-                System.out.println("Historia clinica actualizado ID: " + id);
+            if (stmt.executeUpdate() == 0) {
+                throw new SQLException("Error al ELIMINAR FÍSICAMENTE Historia Clinica. ID no encontrado.");
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al actualizar la historia clinica: " + e.getMessage());
         }
     }
 
     @Override
-    public HistoriaClinica getById(int id) {
-        String sql = "SELECT * FROM historiaclinica WHERE id = ?";
-
+    public HistoriaClinica getById(int id, Connection conn) throws SQLException {
         HistoriaClinica hc = null;
-
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_ID)) {
             stmt.setInt(1, id);
-
-            ResultSet result = stmt.executeQuery();
-
-            if (result.next()) {
-                
-                hc = this.mapHistoriaResult(result);
-            } else {
-                throw new SQLException("No se encontro la historia clinica.");
+            try (ResultSet result = stmt.executeQuery()) {
+                if (result.next()) {
+                    hc = mapHistoriaResult(result);
+                }
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al buscar la historia clinica: " + e.getMessage());
-        }
+        } 
         return hc;
     }
 
     @Override
-    public List<HistoriaClinica> getAll(){
+    public List<HistoriaClinica> getAll(Connection conn) throws SQLException {
         List<HistoriaClinica> listaHistorias = new ArrayList<>();
-        
-        String sql = "SELECT * FROM historiaclinica";
-        
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
-            
-
-            ResultSet result = stmt.executeQuery();
-
-            while (result.next()) {              
-                listaHistorias.add(HistoriaClinicaDAO.mapHistoriaResult(result));
-                
-            } 
-
-        } catch (SQLException e) {
-            System.out.println("Error al buscar pacientes: " + e.getMessage());
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_ALL);
+             ResultSet result = stmt.executeQuery()) {
+            while (result.next()) {
+                listaHistorias.add(mapHistoriaResult(result));
+            }
         }
-        return listaHistorias; 
+        return listaHistorias;
     }
+    
+    @Override
+    public HistoriaClinica buscarPorCampoUnicoInt(int nroHistoria, Connection conn) throws SQLException {
+        HistoriaClinica hc = null;
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_BY_NRO)) {
+            stmt.setInt(1, nroHistoria);
+            try (ResultSet result = stmt.executeQuery()) {
+                if (result.next()) {
+                    hc = mapHistoriaResult(result);
+                }
+            }
+        }
+        return hc; 
 
-    //metodo auxiliar para instanciar una historia con un result
-    public static HistoriaClinica mapHistoriaResult(ResultSet result) throws SQLException{
-        
-        int idHistoria = result.getInt("id");
-        int nroHistoria = result.getInt("nroHistoria");
-        GrupoSanguineo gs = GrupoSanguineo.fromValor(result.getString("grupoSanguineo"));
-        String antecedentes = result.getString("antecedentes");
-        String medicacion = result.getString("medicacionActual");
-        String observaciones = result.getString("observaciones");
-
+        // Debes asegurarte de que este constructor exista en la entidad HistoriaClinica
         return new HistoriaClinica(idHistoria, nroHistoria, gs, antecedentes, medicacion, observaciones);
-
     }
-
 }
