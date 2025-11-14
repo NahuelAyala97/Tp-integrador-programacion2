@@ -1,160 +1,172 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package dao;
 
-import java.util.List;
-import config.DatabaseConnection;
 import entities.GrupoSanguineo;
 import entities.HistoriaClinica;
 import entities.Paciente;
+
 import java.sql.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.List;
 
-/**
- *
- * @author PC
- */
 public class PacienteDAO implements GenericDAO<Paciente> {
 
-    @Override
-    public void insertar(Paciente paciente) {
-        //consulta sql
-        String sql = "INSERT INTO paciente (idPaciente, nombre, apellido, dni, fechaNacimiento, historiaClinica) VALUES (?, ?, ?, ?, ?, ?)";
+    private static final String SQL_INSERT =
+            "INSERT INTO paciente (nombre, apellido, dni, fechaNacimiento, historiaClinica) " +
+            "VALUES (?, ?, ?, ?, ?)";
 
-        //Conexion y consulta, con resources para cerrar la transaccion automaticamente
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, paciente.getId());
-            stmt.setString(2, paciente.getNombre());
-            stmt.setString(3, paciente.getApellido());
-            stmt.setInt(4, paciente.getDni());
-            stmt.setObject(5, paciente.getFechaNacimiento());
-            stmt.setInt(6, paciente.getHistoriaClinica().getId());
+    private static final String SQL_UPDATE =
+            "UPDATE paciente SET nombre = ?, apellido = ?, dni = ?, fechaNacimiento = ?, historiaClinica = ? " +
+            "WHERE idPaciente = ?";
 
-            int filasAfectadas = stmt.executeUpdate();
+    private static final String SQL_DELETE =
+            "DELETE FROM paciente WHERE idPaciente = ?";
 
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se pudo agregar el paciente.");
-            } else {
-                System.out.println("Paciente agregado ID: " + paciente.getId());
-            }
+    private static final String SQL_SELECT_BASE =
+            "SELECT p.idPaciente, p.nombre, p.apellido, p.dni, p.fechaNacimiento, " +
+            "h.id AS hc_id, h.nroHistoria, h.grupoSanguineo, h.antecedentes, h.medicacionActual, h.observaciones " +
+            "FROM paciente p INNER JOIN historiaclinica h ON p.historiaClinica = h.id ";
 
-        } catch (SQLException e) {
-            System.out.println("Error al agregar el producto: " + e.getMessage());
-        }
+    private static final String SQL_SELECT_BY_ID =
+            SQL_SELECT_BASE + "WHERE p.idPaciente = ?";
+
+    private static final String SQL_SELECT_ALL =
+            SQL_SELECT_BASE;
+
+    private static final String SQL_SELECT_BY_DNI =
+            SQL_SELECT_BASE + "WHERE p.dni = ?";
+
+    private final HistoriaClinicaDAO historiaClinicaDao;
+
+    public PacienteDAO(HistoriaClinicaDAO historiaClinicaDao) {
+        this.historiaClinicaDao = historiaClinicaDao;
     }
 
     @Override
-    public void actualizar(Paciente paciente) {
-        String sql = "UPDATE paciente SET nombre = ?, apellido = ?, dni = ?, fechaNacimiento = ?, historiaClinica = ?  WHERE idPaciente = ?";
+    public void insertar(Paciente paciente, Connection conn) throws SQLException {
+        try (PreparedStatement stmt =
+                     conn.prepareStatement(SQL_INSERT, PreparedStatement.RETURN_GENERATED_KEYS)) {
 
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, paciente.getNombre());
             stmt.setString(2, paciente.getApellido());
             stmt.setInt(3, paciente.getDni());
             stmt.setObject(4, paciente.getFechaNacimiento());
-            stmt.setInt(5, paciente.getHistoriaClinica().getId());
-            stmt.setInt(6, paciente.getId());
+            stmt.setLong(5, paciente.getHistoriaClinica().getId());
 
-            int filasAfectadas = stmt.executeUpdate();
-
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se encontro el paciente.");
-            } else {
-                System.out.println("Paciente actualizado ID: " + paciente.getId());
+            if (stmt.executeUpdate() == 0) {
+                throw new SQLException("Error al insertar Paciente. Ninguna fila afectada.");
             }
 
-        } catch (SQLException e) {
-            System.out.println("Error al actualizar el paciente: " + e.getMessage());
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    paciente.setId(rs.getLong(1));
+                }
+            }
         }
     }
 
     @Override
-    public void eliminar(int id){
-        String sql = "DELETE FROM paciente WHERE idPaciente = ?";
+    public void actualizar(Paciente paciente, Connection conn) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_UPDATE)) {
 
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, id);
+            stmt.setString(1, paciente.getNombre());
+            stmt.setString(2, paciente.getApellido());
+            stmt.setInt(3, paciente.getDni());
+            stmt.setObject(4, paciente.getFechaNacimiento());
+            stmt.setLong(5, paciente.getHistoriaClinica().getId());
+            stmt.setLong(6, paciente.getId());
 
-            int filasAfectadas = stmt.executeUpdate();
-
-            if (filasAfectadas == 0) {
-                throw new SQLException("No se encontro el paciente.");
-            } else {
-                System.out.println("Paciente actualizado ID: " + id);
+            if (stmt.executeUpdate() == 0) {
+                throw new SQLException("Error al actualizar Paciente. ID no encontrado.");
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al actualizar el paciente: " + e.getMessage());
         }
     }
 
     @Override
-    public Paciente getById(int id) {
-        String sql = "SELECT * FROM paciente "
-                + "INNER JOIN historiaclinica ON paciente.historiaClinica = historiaclinica.id "
-                + "WHERE idPaciente = ?";
-        
+    public void eliminar(long id, Connection conn) throws SQLException {
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_DELETE)) {
+
+            stmt.setLong(1, id);
+
+            if (stmt.executeUpdate() == 0) {
+                throw new SQLException("Error al eliminar Paciente. ID no encontrado.");
+            }
+        }
+    }
+
+    @Override
+    public Paciente getById(long id, Connection conn) throws SQLException {
         Paciente paciente = null;
-        
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setInt(1, id);
 
-            ResultSet result = stmt.executeQuery();
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_BY_ID)) {
 
-            if (result.next()) {
-                //instancia la historia clinica con el metodo auxiliar para poder pasarla como argumento a paciente              
-                HistoriaClinica hc = HistoriaClinicaDAO.mapHistoriaResult(result);
-                
-                //recupero de datos para instanciar paciente
-                String nombre = result.getString("nombre");
-                String apellido = result.getString("apellido");
-                int dni = result.getInt("dni");
-                LocalDate fechaNacimiento = result.getObject("fechaNacimiento", LocalDate.class);
-                paciente = new Paciente(id, nombre, apellido, dni, fechaNacimiento, hc);
-                
-            } else {
-                throw new SQLException("No se encontro el paciente.");
+            stmt.setLong(1, id);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    paciente = mapPacienteResult(rs);
+                }
             }
-
-        } catch (SQLException e) {
-            System.out.println("Error al buscar al paciente: " + e.getMessage());
         }
+
         return paciente;
     }
 
     @Override
-    public List<Paciente> getAll(){
-        List<Paciente> listaPacientes = new ArrayList<>();
-        
-        String sql = "SELECT * FROM paciente "
-                + "INNER JOIN historiaclinica ON paciente.historiaClinica = historiaclinica.id";
-        
-        try (Connection conn = DatabaseConnection.getConnection(); PreparedStatement stmt = conn.prepareStatement(sql)) {
-            
+    public List<Paciente> getAll(Connection conn) throws SQLException {
+        List<Paciente> lista = new ArrayList<>();
 
-            ResultSet result = stmt.executeQuery();
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_ALL);
+             ResultSet rs = stmt.executeQuery()) {
 
-            while (result.next()) {
-                               
-                HistoriaClinica hc = HistoriaClinicaDAO.mapHistoriaResult(result);
-                
-                int id = result.getInt("idPaciente");
-                String nombre = result.getString("nombre");
-                String apellido = result.getString("apellido");
-                int dni = result.getInt("dni");
-                LocalDate fechaNacimiento = result.getObject("fechaNacimiento", LocalDate.class);
-                
-                listaPacientes.add(new Paciente(id, nombre, apellido, dni, fechaNacimiento, hc));
-                
-            } 
-
-        } catch (SQLException e) {
-            System.out.println("Error al buscar pacientes: " + e.getMessage());
+            while (rs.next()) {
+                lista.add(mapPacienteResult(rs));
+            }
         }
-        return listaPacientes;   
+        return lista;
     }
 
+    @Override
+    public Paciente buscarPorCampoUnicoLong(long dni, Connection conn) throws SQLException {
+        Paciente paciente = null;
+
+        try (PreparedStatement stmt = conn.prepareStatement(SQL_SELECT_BY_DNI)) {
+
+            stmt.setLong(1, dni);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    paciente = mapPacienteResult(rs);
+                }
+            }
+        }
+        return paciente;
+    }
+
+    private Paciente mapPacienteResult(ResultSet rs) throws SQLException {
+
+        long idPaciente = rs.getLong("idPaciente");
+        String nombre = rs.getString("nombre");
+        String apellido = rs.getString("apellido");
+        int dni = rs.getInt("dni");
+        LocalDate fechaNacimiento = rs.getObject("fechaNacimiento", LocalDate.class);
+
+        long hcId = rs.getLong("hc_id");
+        long nroHistoria = rs.getLong("nroHistoria");
+        GrupoSanguineo gs = GrupoSanguineo.fromValor(rs.getString("grupoSanguineo"));
+        String antecedentes = rs.getString("antecedentes");
+        String medicacion = rs.getString("medicacionActual");
+        String observaciones = rs.getString("observaciones");
+
+        HistoriaClinica hc = new HistoriaClinica(
+                hcId,
+                nroHistoria,
+                gs,
+                antecedentes,
+                medicacion,
+                observaciones
+        );
+
+        return new Paciente(idPaciente, nombre, apellido, dni, fechaNacimiento, hc);
+    }
 }
