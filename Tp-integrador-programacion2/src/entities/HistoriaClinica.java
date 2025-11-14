@@ -9,14 +9,14 @@ package entities;
  * @author PC
  */
 public class HistoriaClinica {
-    private int id;
-    private int nroHistoria;
+    private long id;
+    private long nroHistoria;
     private GrupoSanguineo grupoSanguineo; // El Enum
     private String antecedentes;
     private String medicacionActual;
     private String observaciones;
 
-    public HistoriaClinica(int id, int nroHistoria, GrupoSanguineo grupoSanguineo, String antecedentes, String medicacionActual, String observaciones) {
+    public HistoriaClinica(long id, int nroHistoria, GrupoSanguineo grupoSanguineo, String antecedentes, String medicacionActual, String observaciones) {
         this.id = id;
         this.nroHistoria = nroHistoria;
         this.grupoSanguineo = grupoSanguineo;
@@ -29,7 +29,7 @@ public class HistoriaClinica {
         return id;
     }
 
-    public void setId(int id) {
+    public void setId(long id) {
         this.id = id;
     }
 
