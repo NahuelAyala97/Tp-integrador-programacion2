@@ -12,8 +12,10 @@ import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
+import java.util.ArrayList;
 
-public class PacienteService {
+
+public class PacienteService implements GenericService<Paciente> {
 
     private final PacienteDAO pacienteDAO;
     private final HistoriaClinicaDAO historiaDAO;
@@ -23,150 +25,183 @@ public class PacienteService {
         this.pacienteDAO = new PacienteDAO(historiaDAO);
     }
 
-    // =====================================================
-    // CREAR PACIENTE + ASIGNAR HC AUTOMÁTICA COMPLETA
-    // =====================================================
-    public void crearPacienteAsignandoHistoria(Paciente p,
-                                               String antecedentes,
-                                               String medicacion,
-                                               String grupoSanguineoStr,
-                                               String observaciones) throws Exception {
+    // ====================================================================
+    // 1. INSERTAR (TRANSACCIONAL)
+    // ====================================================================
 
-        try (Connection conn = DatabaseConnection.getConnection()) {
+    @Override
+    public void insertar(Paciente p) throws SQLException {
+
+        if (p.getDni() <= 0 || p.getNombre() == null || p.getHistoriaClinica() == null) {
+            throw new SQLException("Error de validación: Datos de Paciente o HC incompletos/inválidos.");
+        }
+
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false); 
+
+
+            if (pacienteDAO.buscarPorCampoUnicoLong(p.getDni(), conn) != null) {
+                 throw new SQLException("Violación de Unicidad: Ya existe un paciente con DNI " + p.getDni());
+            }
+
+
+            if (pacienteDAO.isHistoriaClinicaAsignada((int) p.getHistoriaClinica().getId(), conn)) {
+                 throw new SQLException("Violación 1:1: La Historia Clínica ID " + p.getHistoriaClinica().getId() + " ya está asignada a otro paciente.");
+            }
+            
+
+            historiaDAO.insertar(p.getHistoriaClinica(), conn); 
+  
+            pacienteDAO.insertar(p, conn);
+
+            conn.commit();
+        
+        } catch (SQLException ex) {
+ 
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rb) { 
+            }
+            throw ex; 
+        } finally {
 
             try {
-                conn.setAutoCommit(false);
-
-                // 1) Buscar HC libre o crear una nueva
-                HistoriaClinica h = obtenerHistoriaClinicaAutomatica(conn);
-
-                // 2) Actualizar con datos ingresados por usuario
-                h.setGrupoSanguineo(GrupoSanguineo.fromValor(grupoSanguineoStr));
-                h.setAntecedentes(antecedentes);
-                h.setMedicacionActual(medicacion);
-                h.setObservaciones(observaciones);
-
-                historiaDAO.actualizar(h, conn);
-
-                // 3) Asociar HC al paciente
-                p.setHistoriaClinica(h);
-
-                // 4) Insertar paciente
-                pacienteDAO.insertar(p, conn);
-
-                conn.commit();
-
-            } catch (SQLException ex) {
-                conn.rollback();
-                throw ex;
-
-            } finally {
-                conn.setAutoCommit(true);
-            }
+                if (conn != null) {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                }
+            } catch (SQLException c) { 
         }
     }
 
-    // =====================================================
-    // OBTENER HC LIBRE O CREAR NUEVA
-    // =====================================================
-    private HistoriaClinica obtenerHistoriaClinicaAutomatica(Connection conn) throws SQLException {
+    // ====================================================================
+    // 2. ACTUALIZAR (TRANSACCIONAL) - Implementa GenericService.actualizar
+    // ====================================================================
 
-        String sql =
-            "SELECT h.* FROM historiaclinica h " +
-            "LEFT JOIN paciente p ON h.id = p.historiaClinica " +
-            "WHERE p.idPaciente IS NULL " +
-            "ORDER BY h.id LIMIT 1";
+    @Override
+    public void actualizar(Paciente p) throws SQLException {
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false); 
 
-        try (PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
+            // 1. Actualizar HistoriaClinica (B)
+            historiaDAO.actualizar(p.getHistoriaClinica(), conn);
 
-            if (rs.next()) {
-                return new HistoriaClinica(
-                        rs.getLong("id"),
-                        rs.getLong("nroHistoria"),
-                        GrupoSanguineo.fromValor(rs.getString("grupoSanguineo")),
-                        rs.getString("antecedentes"),
-                        rs.getString("medicacionActual"),
-                        rs.getString("observaciones")
-                );
+            // 2. Actualizar Paciente (A)
+            pacienteDAO.actualizar(p, conn);
+
+            conn.commit();
+
+        } catch (SQLException ex) {
+            // 4. FALLO: REVERTIR
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rb) { /* ... */ }
             }
+            throw ex; // Propagar la excepción original
+        } finally {
+            // 5. CERRAR RECURSOS
+            try {
+                if (conn != null) {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                }
+            } catch (SQLException c) { /* ... */ }
         }
-
-        // Si no hay HC disponible → crear nueva
-        return crearNuevaHistoriaClinica(conn);
     }
 
-    // =====================================================
-    // CREAR NUEVA HISTORIA CLÍNICA
-    // =====================================================
-    private HistoriaClinica crearNuevaHistoriaClinica(Connection conn) throws SQLException {
+    // ====================================================================
+    // 3. ELIMINAR (TRANSACCIONAL - DELETE FÍSICO) - Implementa GenericService.eliminar
+    // ====================================================================
+    
+    @Override
+    public void eliminar(Long id) throws SQLException {
+        Connection conn = null;
+        try {
+            conn = DatabaseConnection.getConnection();
+            conn.setAutoCommit(false); 
 
-        HistoriaClinica nueva = new HistoriaClinica(
-                0L,
-                0L,
-                GrupoSanguineo.fromValor("O+"),
-                "",
-                "",
-                "Historia generada automáticamente"
-        );
-
-        historiaDAO.insertar(nueva, conn);
-
-        // Recargar nroHistoria generado
-        String sql = "SELECT nroHistoria FROM historiaclinica WHERE id = ?";
-        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
-            stmt.setLong(1, nueva.getId());
-            ResultSet rs = stmt.executeQuery();
-
-            if (rs.next()) {
-                nueva.setNroHistoria(rs.getLong("nroHistoria"));
+            // 1. Obtener Paciente (A) para obtener el ID de HC (B)
+            Paciente p = pacienteDAO.getById(id, conn);
+            if (p == null) {
+                throw new SQLException("Paciente ID " + id + " no encontrado para eliminación.");
             }
+            
+            long hcId = p.getHistoriaClinica().getId();
+
+            // 2. Eliminar Paciente (A)
+            pacienteDAO.eliminar(id, conn);
+
+            // 3. Eliminar HistoriaClinica (B)
+            historiaDAO.eliminar(hcId, conn);
+            
+            conn.commit(); 
+
+        } catch (SQLException ex) {
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rb) { /* ... */ }
+            }
+            throw ex; 
+        } finally {
+            try {
+                if (conn != null) {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                }
+            } catch (SQLException c) { /* ... */ }
         }
-
-        return nueva;
     }
+    
+    // ====================================================================
+    // 4. LECTURA (Implementa GenericService)
+    // ====================================================================
 
-    // =====================================================
-    // CRUD COMPLETO
-    // =====================================================
-
-    public List<Paciente> obtenerTodos() throws Exception {
+    @Override
+    public Paciente getById(Long id) throws SQLException {
+        try (Connection conn = DatabaseConnection.getConnection()) {
+            return pacienteDAO.getById(id, conn);
+        }
+    }
+    
+    @Override
+    public List<Paciente> getAll() throws SQLException {
         try (Connection conn = DatabaseConnection.getConnection()) {
             return pacienteDAO.getAll(conn);
         }
     }
 
-    public Paciente buscarPorDni(String dniStr) throws Exception {
-        long dni = Long.parseLong(dniStr);
+    // =====================================================
+    // MÉTODOS AUXILIARES Y LÓGICA DE NEGOCIO (AppMenu)
+    // =====================================================
+    
+    public Paciente buscarPorDni(String dniStr) throws SQLException {
+        // Se asume que el DNI debe ser parseado a Long para el DAO
+        long dni = Long.parseLong(dniStr); 
         try (Connection conn = DatabaseConnection.getConnection()) {
             return pacienteDAO.buscarPorCampoUnicoLong(dni, conn);
         }
     }
 
-    public Paciente obtenerPorId(Long id) throws Exception {
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            return pacienteDAO.getById(id, conn);
-        }
+    // Métodos para la lógica de HC automática
+    private HistoriaClinica obtenerHistoriaClinicaAutomatica(Connection conn) throws SQLException {
+
+        return crearNuevaHistoriaClinica(conn); 
     }
 
-    public void actualizar(Paciente p) throws Exception {
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            pacienteDAO.actualizar(p, conn);
-        }
-    }
+    private HistoriaClinica crearNuevaHistoriaClinica(Connection conn) throws SQLException {
 
-    public void eliminarPaciente(Long id) throws Exception {
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            pacienteDAO.eliminar(id, conn);
-        }
-    }
+        HistoriaClinica nueva = new HistoriaClinica(
+                0L, 0L, GrupoSanguineo.O_POSITIVO, "", "", "Historia generada automáticamente"
+        );
+        historiaDAO.insertar(nueva, conn);
 
-    // =====================================================
-    // ACTUALIZAR HC DIRECTAMENTE
-    // =====================================================
-    public void actualizarHistoria(HistoriaClinica h) throws Exception {
-        try (Connection conn = DatabaseConnection.getConnection()) {
-            historiaDAO.actualizar(h, conn);
-        }
+        return nueva;
     }
 }
