@@ -1,25 +1,20 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package entities;
 
 import java.time.LocalDate;
-/**
- *
- * @author PC
- */
+
 public class Paciente {
-    private int id;
+
+    private long idPaciente;
     private String nombre;
     private String apellido;
     private int dni;
     private LocalDate fechaNacimiento;
-    //relacion 1 a 1
     private HistoriaClinica historiaClinica;
 
-    public Paciente(int id, String nombre, String apellido, int dni, LocalDate fechaNacimiento, HistoriaClinica historiaClinica) {
-        this.id = id;
+    public Paciente(long idPaciente, String nombre, String apellido,
+                    int dni, LocalDate fechaNacimiento, HistoriaClinica historiaClinica) {
+
+        this.idPaciente = idPaciente;
         this.nombre = nombre;
         this.apellido = apellido;
         this.dni = dni;
@@ -27,12 +22,16 @@ public class Paciente {
         this.historiaClinica = historiaClinica;
     }
 
-    public int getId() {
-        return id;
+    // ===========================
+    // GETTERS Y SETTERS CORRECTOS
+    // ===========================
+
+    public long getId() {
+        return idPaciente;
     }
 
-    public void setId(int id) {
-        this.id = id;
+    public void setId(long idPaciente) {
+        this.idPaciente = idPaciente;
     }
 
     public String getNombre() {
@@ -77,8 +76,13 @@ public class Paciente {
 
     @Override
     public String toString() {
-        return "Paciente{" + "id=" + id + ", nombre=" + nombre + ", apellido=" + apellido + ", dni=" + dni + ", fechaNacimiento=" + fechaNacimiento + ", historiaClinica=" + historiaClinica + '}';
+        return "Paciente{" +
+                "idPaciente=" + idPaciente +
+                ", nombre='" + nombre + '\'' +
+                ", apellido='" + apellido + '\'' +
+                ", dni=" + dni +
+                ", fechaNacimiento=" + fechaNacimiento +
+                ", historiaClinica=" + historiaClinica +
+                '}';
     }
-    
-    
 }
