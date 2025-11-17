@@ -94,5 +94,8 @@ Opción 4: Actualizar → permite modificar datos personales y médicos, manteni
 Opción 5: Eliminar → elimina paciente y su historia clínica asociada.
 Opción 0: Salir del sistema.
 
+## Link Video de YouTube
+https://www.youtube.com/watch?v=aLBZj1iuBL4
+
 
 
